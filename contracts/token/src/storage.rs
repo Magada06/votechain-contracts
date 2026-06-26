@@ -28,3 +28,18 @@ pub fn get_admin(env: &Env) -> Result<Address, ContractError> {
 pub fn set_admin(env: &Env, admin: &Address) {
     env.storage().instance().set(&TokenDataKey::Admin, admin);
 }
+
+pub fn set_pending_admin(env: &Env, candidate: &Address) {
+    env.storage().instance().set(&TokenDataKey::PendingAdmin, candidate);
+}
+
+pub fn get_pending_admin(env: &Env) -> Result<Address, crate::types::ContractError> {
+    env.storage()
+        .instance()
+        .get(&TokenDataKey::PendingAdmin)
+        .ok_or(crate::types::ContractError::NoPendingAdmin)
+}
+
+pub fn clear_pending_admin(env: &Env) {
+    env.storage().instance().remove(&TokenDataKey::PendingAdmin);
+}

@@ -29,6 +29,12 @@ pub enum ContractError {
     NoVotingPower = 11,
     /// 12 – Proposal has not passed
     ProposalNotPassed = 12,
+    /// 13 – No pending admin transfer in progress
+    NoPendingAdmin = 13,
+    /// 14 – Caller is not the pending admin
+    NotPendingAdmin = 14,
+    /// 15 – Caller is not an authorised proposer
+    NotProposer = 15,
 }
 
 #[contracttype]
@@ -72,4 +78,6 @@ pub enum DataKey {
     HasVoted(u64, Address),  // (proposal_id, voter)
     Admin,
     VotingToken,
+    PendingAdmin,
+    Proposer(Address),
 }

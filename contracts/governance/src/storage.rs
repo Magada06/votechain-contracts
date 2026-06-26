@@ -50,3 +50,33 @@ pub fn has_voted(env: &Env, proposal_id: u64, voter: &Address) -> bool {
         .get(&DataKey::HasVoted(proposal_id, voter.clone()))
         .unwrap_or(false)
 }
+
+pub fn set_pending_admin(env: &Env, candidate: &Address) {
+    env.storage().instance().set(&DataKey::PendingAdmin, candidate);
+}
+
+pub fn get_pending_admin(env: &Env) -> Result<Address, crate::types::ContractError> {
+    env.storage()
+        .instance()
+        .get(&DataKey::PendingAdmin)
+        .ok_or(crate::types::ContractError::NoPendingAdmin)
+}
+
+pub fn clear_pending_admin(env: &Env) {
+    env.storage().instance().remove(&DataKey::PendingAdmin);
+}
+
+pub fn add_proposer(env: &Env, proposer: &Address) {
+    env.storage().instance().set(&DataKey::Proposer(proposer.clone()), &true);
+}
+
+pub fn remove_proposer(env: &Env, proposer: &Address) {
+    env.storage().instance().remove(&DataKey::Proposer(proposer.clone()));
+}
+
+pub fn is_proposer(env: &Env, proposer: &Address) -> bool {
+    env.storage()
+        .instance()
+        .get(&DataKey::Proposer(proposer.clone()))
+        .unwrap_or(false)
+}

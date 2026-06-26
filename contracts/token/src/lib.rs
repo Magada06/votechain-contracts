@@ -34,6 +34,7 @@ impl TokenContract {
         if b < amount { return Err(ContractError::InsufficientBalance); }
         set_balance(&env, &from, b - amount);
         set_balance(&env, &to, balance_of(&env, &to) + amount);
+        events::transferred(&env, &from, &to, amount);
         Ok(())
     }
 
@@ -60,6 +61,26 @@ impl TokenContract {
         if amount <= 0 { return Err(ContractError::InvalidAmount); }
         set_balance(&env, &to, balance_of(&env, &to) + amount);
         set_total_supply(&env, total_supply(&env) + amount);
+        events::minted(&env, &to, amount);
+        Ok(())
+    }
+
+    /// Step 1 of 2: admin nominates a new admin.
+    pub fn transfer_admin(env: Env, admin: Address, new_admin: Address) -> Result<(), ContractError> {
+        admin.require_auth();
+        if get_admin(&env)? != admin { return Err(ContractError::NotAdmin); }
+        set_pending_admin(&env, &new_admin);
+        events::admin_transfer_started(&env, &admin, &new_admin);
+        Ok(())
+    }
+
+    /// Step 2 of 2: candidate accepts the admin role.
+    pub fn accept_admin(env: Env, new_admin: Address) -> Result<(), ContractError> {
+        new_admin.require_auth();
+        if get_pending_admin(&env)? != new_admin { return Err(ContractError::NotPendingAdmin); }
+        set_admin(&env, &new_admin);
+        clear_pending_admin(&env);
+        events::admin_transfer_completed(&env, &new_admin);
         Ok(())
     }
 
@@ -70,6 +91,7 @@ impl TokenContract {
         if b < amount { return Err(ContractError::InsufficientBalance); }
         set_balance(&env, &from, b - amount);
         set_total_supply(&env, total_supply(&env) - amount);
+        events::burned(&env, &from, amount);
         Ok(())
     }
 }

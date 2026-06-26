@@ -15,6 +15,10 @@ pub enum ContractError {
     InsufficientBalance = 4,
     /// 5 – Spender allowance is insufficient
     AllowanceExceeded = 5,
+    /// 6 – No pending admin transfer in progress
+    NoPendingAdmin = 6,
+    /// 7 – Caller is not the pending admin
+    NotPendingAdmin = 7,
 }
 
 #[contracttype]
@@ -23,4 +27,5 @@ pub enum TokenDataKey {
     Allowance(Address, Address),
     TotalSupply,
     Admin,
+    PendingAdmin,
 }

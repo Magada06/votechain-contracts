@@ -11,6 +11,8 @@ use soroban_sdk::{contract, contractimpl, token, Address, Env, String};
 use storage::{
     get_admin, get_voting_token, has_voted, load_proposal, mark_voted,
     next_id, save_proposal, set_admin, set_voting_token,
+    set_pending_admin, get_pending_admin, clear_pending_admin,
+    add_proposer, remove_proposer, is_proposer,
 };
 use types::{ContractError, DataKey, Proposal, ProposalStatus, Vote};
 
@@ -34,6 +36,7 @@ impl GovernanceContract {
         duration: u64,
     ) -> Result<u64, ContractError> {
         proposer.require_auth();
+        if !is_proposer(&env, &proposer) { return Err(ContractError::NotProposer); }
         if quorum <= 0 { return Err(ContractError::InvalidQuorum); }
         if duration == 0 { return Err(ContractError::InvalidDuration); }
 
@@ -129,6 +132,41 @@ impl GovernanceContract {
         proposal.status = ProposalStatus::Cancelled;
         save_proposal(&env, &proposal);
         events::proposal_finalised(&env, proposal_id, &ProposalStatus::Cancelled);
+        Ok(())
+    }
+
+    /// Step 1 of 2: admin nominates a new admin. The candidate must call accept_admin to confirm.
+    pub fn transfer_admin(env: Env, admin: Address, new_admin: Address) -> Result<(), ContractError> {
+        admin.require_auth();
+        if get_admin(&env)? != admin { return Err(ContractError::NotAdmin); }
+        set_pending_admin(&env, &new_admin);
+        events::admin_transfer_started(&env, &admin, &new_admin);
+        Ok(())
+    }
+
+    /// Step 2 of 2: candidate accepts the admin role.
+    pub fn accept_admin(env: Env, new_admin: Address) -> Result<(), ContractError> {
+        new_admin.require_auth();
+        if get_pending_admin(&env)? != new_admin { return Err(ContractError::NotPendingAdmin); }
+        set_admin(&env, &new_admin);
+        clear_pending_admin(&env);
+        events::admin_transfer_completed(&env, &new_admin);
+        Ok(())
+    }
+
+    /// Admin adds an address to the proposer allowlist.
+    pub fn add_proposer(env: Env, admin: Address, proposer: Address) -> Result<(), ContractError> {
+        admin.require_auth();
+        if get_admin(&env)? != admin { return Err(ContractError::NotAdmin); }
+        add_proposer(&env, &proposer);
+        Ok(())
+    }
+
+    /// Admin removes an address from the proposer allowlist.
+    pub fn remove_proposer(env: Env, admin: Address, proposer: Address) -> Result<(), ContractError> {
+        admin.require_auth();
+        if get_admin(&env)? != admin { return Err(ContractError::NotAdmin); }
+        remove_proposer(&env, &proposer);
         Ok(())
     }
 

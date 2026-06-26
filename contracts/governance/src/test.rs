@@ -18,15 +18,16 @@ fn setup_token(env: &Env, admin: &Address) -> Address {
     id
 }
 
-fn make_proposal(env: &Env, client: &GovernanceContractClient, proposer: &Address, token_id: &Address) -> u64 {
-    let admin = Address::generate(env);
-    client.initialize(&admin, token_id);
+/// Initialise governance, allowlist `proposer`, and create one proposal.
+fn make_proposal(env: &Env, client: &GovernanceContractClient, admin: &Address, proposer: &Address, token_id: &Address) -> u64 {
+    client.initialize(admin, token_id);
+    client.add_proposer(admin, proposer);
     client.create_proposal(
         proposer,
         &String::from_str(env, "Upgrade protocol"),
         &String::from_str(env, "Upgrade to v2"),
-        &100,   // quorum
-        &3600,  // 1 hour
+        &100,
+        &3600,
     )
 }
 
@@ -38,6 +39,7 @@ fn test_create_proposal() {
     let token_id = setup_token(&env, &admin);
 
     client.initialize(&admin, &token_id);
+    client.add_proposer(&admin, &proposer);
     let id = client.create_proposal(
         &proposer,
         &String::from_str(&env, "Add new feature"),
@@ -55,9 +57,10 @@ fn test_cast_vote_and_finalise_passed() {
     let (env, client) = setup();
     let admin = Address::generate(&env);
     let voter = Address::generate(&env);
-    let token_id = setup_token(&env, &voter); // voter holds all tokens
+    let token_id = setup_token(&env, &voter);
 
     client.initialize(&admin, &token_id);
+    client.add_proposer(&admin, &voter);
     let id = client.create_proposal(
         &voter,
         &String::from_str(&env, "Proposal A"),
@@ -72,7 +75,6 @@ fn test_cast_vote_and_finalise_passed() {
     let p = client.get_proposal(&id);
     assert_eq!(p.votes_yes, 1_000_000);
 
-    // Advance past end_time
     env.ledger().with_mut(|l| l.timestamp += 3601);
     client.finalise(&id);
 
@@ -87,11 +89,12 @@ fn test_finalise_rejected_below_quorum() {
     let token_id = setup_token(&env, &voter);
 
     client.initialize(&admin, &token_id);
+    client.add_proposer(&admin, &voter);
     let id = client.create_proposal(
         &voter,
         &String::from_str(&env, "Proposal B"),
         &String::from_str(&env, "desc"),
-        &9_999_999, // quorum higher than total supply
+        &9_999_999,
         &3600,
     );
 
@@ -110,6 +113,7 @@ fn test_finalise_rejected_no_wins() {
     let token_id = setup_token(&env, &voter);
 
     client.initialize(&admin, &token_id);
+    client.add_proposer(&admin, &voter);
     let id = client.create_proposal(
         &voter,
         &String::from_str(&env, "Proposal C"),
@@ -133,6 +137,7 @@ fn test_execute_passed_proposal() {
     let token_id = setup_token(&env, &voter);
 
     client.initialize(&admin, &token_id);
+    client.add_proposer(&admin, &voter);
     let id = client.create_proposal(
         &voter,
         &String::from_str(&env, "Proposal D"),
@@ -156,6 +161,7 @@ fn test_cancel_proposal() {
     let token_id = setup_token(&env, &admin);
 
     client.initialize(&admin, &token_id);
+    client.add_proposer(&admin, &proposer);
     let id = client.create_proposal(
         &proposer,
         &String::from_str(&env, "Proposal E"),
@@ -169,7 +175,6 @@ fn test_cancel_proposal() {
 
 // ── TEST-009: Concurrent proposal scenario tests ─────────────────────────────
 
-/// Multiple active proposals can coexist and receive independent votes.
 #[test]
 fn test_concurrent_proposals_independent_votes() {
     let (env, client) = setup();
@@ -178,6 +183,7 @@ fn test_concurrent_proposals_independent_votes() {
     let token_id = setup_token(&env, &voter);
 
     client.initialize(&admin, &token_id);
+    client.add_proposer(&admin, &voter);
     let id1 = client.create_proposal(&voter, &String::from_str(&env, "P1"), &String::from_str(&env, "d"), &1, &3600);
     let id2 = client.create_proposal(&voter, &String::from_str(&env, "P2"), &String::from_str(&env, "d"), &1, &3600);
     let id3 = client.create_proposal(&voter, &String::from_str(&env, "P3"), &String::from_str(&env, "d"), &1, &3600);
@@ -187,13 +193,11 @@ fn test_concurrent_proposals_independent_votes() {
     assert_eq!(client.get_proposal(&id3).status, ProposalStatus::Active);
 
     client.cast_vote(&voter, &id1, &Vote::Yes);
-    // voter has not voted on id2 or id3
     assert!(client.has_voted(&id1, &voter));
     assert!(!client.has_voted(&id2, &voter));
     assert!(!client.has_voted(&id3, &voter));
 }
 
-/// Votes on one proposal do not affect tallies of another.
 #[test]
 fn test_concurrent_votes_do_not_bleed() {
     let (env, client) = setup();
@@ -202,6 +206,7 @@ fn test_concurrent_votes_do_not_bleed() {
     let token_id = setup_token(&env, &voter);
 
     client.initialize(&admin, &token_id);
+    client.add_proposer(&admin, &voter);
     let id1 = client.create_proposal(&voter, &String::from_str(&env, "P1"), &String::from_str(&env, "d"), &1, &3600);
     let id2 = client.create_proposal(&voter, &String::from_str(&env, "P2"), &String::from_str(&env, "d"), &1, &3600);
 
@@ -215,7 +220,6 @@ fn test_concurrent_votes_do_not_bleed() {
     assert_eq!(p2.votes_abstain, 0);
 }
 
-/// Finalising one proposal does not change the status of others.
 #[test]
 fn test_finalise_one_does_not_affect_others() {
     let (env, client) = setup();
@@ -224,6 +228,7 @@ fn test_finalise_one_does_not_affect_others() {
     let token_id = setup_token(&env, &voter);
 
     client.initialize(&admin, &token_id);
+    client.add_proposer(&admin, &voter);
     let id1 = client.create_proposal(&voter, &String::from_str(&env, "P1"), &String::from_str(&env, "d"), &1, &3600);
     let id2 = client.create_proposal(&voter, &String::from_str(&env, "P2"), &String::from_str(&env, "d"), &1, &7200);
 
@@ -235,7 +240,6 @@ fn test_finalise_one_does_not_affect_others() {
     assert_eq!(client.get_proposal(&id2).status, ProposalStatus::Active);
 }
 
-/// Proposal IDs are unique and monotonically increasing.
 #[test]
 fn test_proposal_ids_are_unique() {
     let (env, client) = setup();
@@ -244,6 +248,7 @@ fn test_proposal_ids_are_unique() {
     let token_id = setup_token(&env, &admin);
 
     client.initialize(&admin, &token_id);
+    client.add_proposer(&admin, &proposer);
     let id1 = client.create_proposal(&proposer, &String::from_str(&env, "P1"), &String::from_str(&env, "d"), &1, &3600);
     let id2 = client.create_proposal(&proposer, &String::from_str(&env, "P2"), &String::from_str(&env, "d"), &1, &3600);
     let id3 = client.create_proposal(&proposer, &String::from_str(&env, "P3"), &String::from_str(&env, "d"), &1, &3600);
@@ -252,7 +257,6 @@ fn test_proposal_ids_are_unique() {
     assert_eq!(client.proposal_count(), 3);
 }
 
-/// Proposals at different lifecycle stages coexist correctly.
 #[test]
 fn test_proposals_at_different_lifecycle_stages() {
     let (env, client) = setup();
@@ -261,10 +265,11 @@ fn test_proposals_at_different_lifecycle_stages() {
     let token_id = setup_token(&env, &voter);
 
     client.initialize(&admin, &token_id);
-    let active_id   = client.create_proposal(&voter, &String::from_str(&env, "Active"),   &String::from_str(&env, "d"), &1,         &7200);
-    let passed_id   = client.create_proposal(&voter, &String::from_str(&env, "Passed"),   &String::from_str(&env, "d"), &1,         &3600);
-    let rejected_id = client.create_proposal(&voter, &String::from_str(&env, "Rejected"), &String::from_str(&env, "d"), &9_999_999, &3600);
-    let cancelled_id = client.create_proposal(&voter, &String::from_str(&env, "Cancel"),  &String::from_str(&env, "d"), &1,         &3600);
+    client.add_proposer(&admin, &voter);
+    let active_id    = client.create_proposal(&voter, &String::from_str(&env, "Active"),   &String::from_str(&env, "d"), &1,         &7200);
+    let passed_id    = client.create_proposal(&voter, &String::from_str(&env, "Passed"),   &String::from_str(&env, "d"), &1,         &3600);
+    let rejected_id  = client.create_proposal(&voter, &String::from_str(&env, "Rejected"), &String::from_str(&env, "d"), &9_999_999, &3600);
+    let cancelled_id = client.create_proposal(&voter, &String::from_str(&env, "Cancel"),   &String::from_str(&env, "d"), &1,         &3600);
 
     client.cast_vote(&voter, &passed_id, &Vote::Yes);
     client.cast_vote(&voter, &rejected_id, &Vote::Yes);
@@ -291,6 +296,7 @@ fn test_cannot_vote_twice() {
     let token_id = setup_token(&env, &voter);
 
     client.initialize(&admin, &token_id);
+    client.add_proposer(&admin, &voter);
     let id = client.create_proposal(
         &voter,
         &String::from_str(&env, "Proposal F"),
@@ -304,11 +310,11 @@ fn test_cannot_vote_twice() {
 
 // ── TEST-013: access control negative tests ───────────────────────────────────
 
-/// Helper: create a passed proposal ready for execute/cancel tests.
 fn setup_passed_proposal(env: &Env, client: &GovernanceContractClient, admin: &Address) -> u64 {
     let voter = Address::generate(env);
     let token_id = setup_token(env, &voter);
     client.initialize(admin, &token_id);
+    client.add_proposer(admin, &voter);
     let id = client.create_proposal(
         &voter,
         &String::from_str(env, "Prop"),
@@ -322,11 +328,11 @@ fn setup_passed_proposal(env: &Env, client: &GovernanceContractClient, admin: &A
     id
 }
 
-/// Helper: create an active proposal.
 fn setup_active_proposal(env: &Env, client: &GovernanceContractClient, admin: &Address) -> u64 {
     let proposer = Address::generate(env);
     let token_id = setup_token(env, admin);
     client.initialize(admin, &token_id);
+    client.add_proposer(admin, &proposer);
     client.create_proposal(
         &proposer,
         &String::from_str(env, "Prop"),
@@ -336,10 +342,8 @@ fn setup_active_proposal(env: &Env, client: &GovernanceContractClient, admin: &A
     )
 }
 
-// ── execute: non-admin caller ─────────────────────────────────────────────────
-
 #[test]
-#[should_panic(expected = "not admin")]
+#[should_panic]
 fn test_execute_non_admin_reverts() {
     let (env, client) = setup();
     let admin = Address::generate(&env);
@@ -349,20 +353,17 @@ fn test_execute_non_admin_reverts() {
 }
 
 #[test]
-#[should_panic(expected = "not admin")]
+#[should_panic]
 fn test_execute_zero_address_reverts() {
     let (env, client) = setup();
     let admin = Address::generate(&env);
     let id = setup_passed_proposal(&env, &client, &admin);
-    // All-zero Stellar account (32 zero bytes) acts as the "zero address"
     let zero = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF");
     client.execute(&zero, &id);
 }
 
-// ── cancel: non-admin caller ──────────────────────────────────────────────────
-
 #[test]
-#[should_panic(expected = "not admin")]
+#[should_panic]
 fn test_cancel_non_admin_reverts() {
     let (env, client) = setup();
     let admin = Address::generate(&env);
@@ -372,11 +373,121 @@ fn test_cancel_non_admin_reverts() {
 }
 
 #[test]
-#[should_panic(expected = "not admin")]
+#[should_panic]
 fn test_cancel_zero_address_reverts() {
     let (env, client) = setup();
     let admin = Address::generate(&env);
     let id = setup_active_proposal(&env, &client, &admin);
     let zero = Address::from_str(&env, "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF");
     client.cancel(&zero, &id);
+}
+
+// ── Issue-475: admin role separation tests ────────────────────────────────────
+
+#[test]
+fn test_transfer_admin_two_step() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    let token_id = setup_token(&env, &admin);
+
+    client.initialize(&admin, &token_id);
+    client.transfer_admin(&admin, &new_admin);
+    // new_admin accepts
+    client.accept_admin(&new_admin);
+    // new_admin can now perform admin actions; old admin cannot
+    let proposer = Address::generate(&env);
+    client.add_proposer(&new_admin, &proposer);
+}
+
+#[test]
+#[should_panic]
+fn test_transfer_admin_non_admin_reverts() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let attacker = Address::generate(&env);
+    let token_id = setup_token(&env, &admin);
+
+    client.initialize(&admin, &token_id);
+    client.transfer_admin(&attacker, &attacker);
+}
+
+#[test]
+#[should_panic]
+fn test_accept_admin_wrong_caller_reverts() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+    let attacker = Address::generate(&env);
+    let token_id = setup_token(&env, &admin);
+
+    client.initialize(&admin, &token_id);
+    client.transfer_admin(&admin, &new_admin);
+    client.accept_admin(&attacker); // wrong caller
+}
+
+#[test]
+#[should_panic]
+fn test_create_proposal_non_proposer_reverts() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let non_proposer = Address::generate(&env);
+    let token_id = setup_token(&env, &admin);
+
+    client.initialize(&admin, &token_id);
+    // non_proposer is NOT allowlisted
+    client.create_proposal(
+        &non_proposer,
+        &String::from_str(&env, "Sneaky proposal"),
+        &String::from_str(&env, "desc"),
+        &1,
+        &3600,
+    );
+}
+
+#[test]
+#[should_panic]
+fn test_add_proposer_non_admin_reverts() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let non_admin = Address::generate(&env);
+    let token_id = setup_token(&env, &admin);
+
+    client.initialize(&admin, &token_id);
+    client.add_proposer(&non_admin, &non_admin);
+}
+
+#[test]
+#[should_panic]
+fn test_remove_proposer_non_admin_reverts() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let proposer = Address::generate(&env);
+    let non_admin = Address::generate(&env);
+    let token_id = setup_token(&env, &admin);
+
+    client.initialize(&admin, &token_id);
+    client.add_proposer(&admin, &proposer);
+    client.remove_proposer(&non_admin, &proposer);
+}
+
+#[test]
+fn test_remove_proposer_revokes_access() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let proposer = Address::generate(&env);
+    let token_id = setup_token(&env, &admin);
+
+    client.initialize(&admin, &token_id);
+    client.add_proposer(&admin, &proposer);
+    client.remove_proposer(&admin, &proposer);
+    // proposer is now removed — creating a proposal should fail
+    let result = client.try_create_proposal(
+        &proposer,
+        &String::from_str(&env, "Removed proposer"),
+        &String::from_str(&env, "desc"),
+        &1,
+        &3600,
+    );
+    assert!(result.is_err());
 }

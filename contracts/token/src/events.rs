@@ -11,3 +11,11 @@ pub fn transferred(env: &Env, from: &Address, to: &Address, amount: i128) {
 pub fn burned(env: &Env, from: &Address, amount: i128) {
     env.events().publish((symbol_short!("burn"), from.clone()), amount);
 }
+
+pub fn admin_transfer_started(env: &Env, current: &Address, pending: &Address) {
+    env.events().publish((symbol_short!("adm_init"), current.clone()), pending.clone());
+}
+
+pub fn admin_transfer_completed(env: &Env, new_admin: &Address) {
+    env.events().publish((symbol_short!("adm_done"),), new_admin.clone());
+}
